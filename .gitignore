@@ -19,6 +19,8 @@ build_config.mk
 *.*jnilib*
 *.d-e
 *.o-*
+*.swp
+*.lo
 
 ldb
 manifest_dump
@@ -31,3 +33,27 @@ coverage/COVERAGE_REPORT
 tags
 java/*.log
 java/include/org_rocksdb_*.h
+
+.deps/
+.libs/
+Makefile.in
+aclocal.m4
+ar-lib
+autom4te.cache/
+config.guess
+config.h
+config.h.in
+config.log
+config.status
+config.sub
+configure
+depcomp
+install-sh
+librocksdb.la
+libtool
+ltmain.sh
+m4/
+missing
+stamp-h1
+Makefile
+
