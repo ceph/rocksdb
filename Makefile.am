@@ -56,8 +56,6 @@ if WITH_GFLAGS_FLAGS
    librocksdb_la_LDFLAGS += -lgflags
 endif
 
-FOO = `./build_tools/build_detect_version`
-
 SOURCE_FILES = db/builder.cc \
 	db/c.cc \
 	db/column_family.cc \
