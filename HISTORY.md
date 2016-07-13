@@ -1,6 +1,8 @@
 # Unreleased
 ### Public API Change
 * Deprecate BlockBaseTableOptions.hash_index_allow_collision=false
+* options.memtable_prefix_bloom_bits changes to options.memtable_prefix_bloom_bits_ratio and deprecate options.memtable_prefix_bloom_probes
+* enum type #movebot Rocksdb Users Group and PerfLevel changes from char to unsigned char. Value of all PerfLevel shift by one.
 
 
 # Rocksdb Change Log
