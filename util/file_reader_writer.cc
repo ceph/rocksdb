@@ -80,9 +80,7 @@ Status WritableFileWriter::Append(const Slice& data) {
   }
 
   // We never write directly to disk with unbuffered I/O on.
-  // or we simply use it for its original purpose to accumulate many small
-  // chunks
-  if (!use_os_buffer_ || (buf_.Capacity() >= left)) {
+  if (!use_os_buffer_ ) {
     while (left > 0) {
       size_t appended = buf_.Append(src, left);
       left -= appended;
