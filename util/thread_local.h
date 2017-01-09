@@ -18,8 +18,11 @@
 #include "port/port.h"
 
 #ifndef ROCKSDB_SUPPORT_THREAD_LOCAL
-#define ROCKSDB_SUPPORT_THREAD_LOCAL \
-  !defined(OS_WIN) && !defined(OS_MACOSX) && !defined(IOS_CROSS_COMPILE)
+#  if defined(OS_WIN) || defined(OS_MACOSX) || defined(IOS_CROSS_COMPILE)
+#    define ROCKSDB_SUPPORT_THREAD_LOCAL 0
+#  else
+#    define ROCKSDB_SUPPORT_THREAD_LOCAL 1
+#  endif
 #endif
 
 namespace rocksdb {
