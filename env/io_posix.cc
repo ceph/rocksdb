@@ -22,6 +22,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#undef major
+#undef minor
 #ifdef OS_LINUX
 #include <sys/statfs.h>
 #include <sys/syscall.h>
