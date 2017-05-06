@@ -581,15 +581,16 @@ struct DBOptions {
   // bufferized. The hardware buffer of the devices may however still
   // be used. Memory mapped files are not impacted by these parameters.
 
-  // Use O_DIRECT for reading file
+  // Use O_DIRECT for user reads
   // Default: false
   // Not supported in ROCKSDB_LITE mode!
   bool use_direct_reads = false;
 
-  // Use O_DIRECT for writing file
+  // Use O_DIRECT for both reads and writes in background flush and compactions
+  // When true, we also force new_table_reader_for_compaction_inputs to true.
   // Default: false
   // Not supported in ROCKSDB_LITE mode!
-  bool use_direct_writes = false;
+  bool use_direct_io_for_flush_and_compaction = false;
 
   // If false, fallocate() calls are bypassed
   bool allow_fallocate = true;
@@ -689,7 +690,9 @@ struct DBOptions {
 
   // This is the maximum buffer size that is used by WritableFileWriter.
   // On Windows, we need to maintain an aligned buffer for writes.
-  // We allow the buffer to grow until it's size hits the limit.
+  // We allow the buffer to grow until it's size hits the limit in buffered
+  // IO and fix the buffer size when using direct IO to ensure alignment of
+  // write requests if the logical sector size is unusual
   //
   // Default: 1024 * 1024 (1 MB)
   size_t writable_file_max_buffer_size = 1024 * 1024;

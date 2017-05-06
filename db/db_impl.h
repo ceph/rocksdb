@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -193,6 +195,8 @@ class DBImpl : public DB {
   virtual SequenceNumber GetLatestSequenceNumber() const override;
 
 #ifndef ROCKSDB_LITE
+  using DB::ResetStats;
+  virtual Status ResetStats() override;
   virtual Status DisableFileDeletions() override;
   virtual Status EnableFileDeletions(bool force) override;
   virtual int IsFileDeletionsEnabled() const;
@@ -557,6 +561,10 @@ class DBImpl : public DB {
   Status RenameTempFileToOptionsFile(const std::string& file_name);
   Status DeleteObsoleteOptionsFiles();
 
+  void NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
+                          const MutableCFOptions& mutable_cf_options,
+                          int job_id, TableProperties prop);
+
   void NotifyOnFlushCompleted(ColumnFamilyData* cfd, FileMetaData* file_meta,
                               const MutableCFOptions& mutable_cf_options,
                               int job_id, TableProperties prop);
@@ -703,6 +711,10 @@ class DBImpl : public DB {
   Status WriteToWAL(const autovector<WriteThread::Writer*>& write_group,
                     log::Writer* log_writer, bool need_log_sync,
                     bool need_log_dir_sync, SequenceNumber sequence);
+
+  // Used by WriteImpl to update bg_error_ when encountering memtable insert
+  // error.
+  void UpdateBackgroundError(const Status& memtable_insert_status);
 
 #ifndef ROCKSDB_LITE
 
@@ -1090,13 +1102,6 @@ class DBImpl : public DB {
   // No copying allowed
   DBImpl(const DBImpl&);
   void operator=(const DBImpl&);
-
-  // Return the earliest snapshot where seqno is visible.
-  // Store the snapshot right before that, if any, in prev_snapshot
-  inline SequenceNumber findEarliestVisibleSnapshot(
-    SequenceNumber in,
-    std::vector<SequenceNumber>& snapshots,
-    SequenceNumber* prev_snapshot);
 
   // Background threads call this function, which is just a wrapper around
   // the InstallSuperVersion() function. Background threads carry

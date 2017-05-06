@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -120,7 +122,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
       {"allow_mmap_reads", "true"},
       {"allow_mmap_writes", "false"},
       {"use_direct_reads", "false"},
-      {"use_direct_writes", "false"},
+      {"use_direct_io_for_flush_and_compaction", "false"},
       {"is_fd_close_on_exec", "true"},
       {"skip_log_error_on_recovery", "false"},
       {"stats_dump_period_sec", "46"},
@@ -234,7 +236,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.allow_mmap_reads, true);
   ASSERT_EQ(new_db_opt.allow_mmap_writes, false);
   ASSERT_EQ(new_db_opt.use_direct_reads, false);
-  ASSERT_EQ(new_db_opt.use_direct_writes, false);
+  ASSERT_EQ(new_db_opt.use_direct_io_for_flush_and_compaction, false);
   ASSERT_EQ(new_db_opt.is_fd_close_on_exec, true);
   ASSERT_EQ(new_db_opt.skip_log_error_on_recovery, false);
   ASSERT_EQ(new_db_opt.stats_dump_period_sec, 46U);

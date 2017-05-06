@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -36,7 +38,7 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src) {
   if (result.max_open_files != -1) {
     int max_max_open_files = port::GetMaxOpenFiles();
     if (max_max_open_files == -1) {
-      max_max_open_files = 1000000;
+      max_max_open_files = 0x400000;
     }
     ClipToRange(&result.max_open_files, 20, max_max_open_files);
   }
@@ -97,11 +99,14 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src) {
     result.db_paths.emplace_back(dbname, std::numeric_limits<uint64_t>::max());
   }
 
-  if (result.use_direct_reads && result.compaction_readahead_size == 0) {
+  if (result.use_direct_io_for_flush_and_compaction &&
+      result.compaction_readahead_size == 0) {
+    TEST_SYNC_POINT_CALLBACK("SanitizeOptions:direct_io", nullptr);
     result.compaction_readahead_size = 1024 * 1024 * 2;
   }
 
-  if (result.compaction_readahead_size > 0) {
+  if (result.compaction_readahead_size > 0 ||
+      result.use_direct_io_for_flush_and_compaction) {
     result.new_table_reader_for_compaction_inputs = true;
   }
 
@@ -165,10 +170,12 @@ static Status ValidateOptions(
         "then direct I/O reads (use_direct_reads) must be disabled. ");
   }
 
-  if (db_options.allow_mmap_writes && db_options.use_direct_writes) {
+  if (db_options.allow_mmap_writes &&
+      db_options.use_direct_io_for_flush_and_compaction) {
     return Status::NotSupported(
         "If memory mapped writes (allow_mmap_writes) are enabled "
-        "then direct I/O writes (use_direct_writes) must be disabled. ");
+        "then direct I/O writes (use_direct_io_for_flush_and_compaction) must "
+        "be disabled. ");
   }
 
   if (db_options.keep_log_file_num == 0) {
@@ -823,9 +830,11 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
       std::vector<SequenceNumber> snapshot_seqs =
           snapshots_.GetAll(&earliest_write_conflict_snapshot);
 
+      EnvOptions optimized_env_options =
+          env_->OptimizeForCompactionTableWrite(env_options_, immutable_db_options_);
       s = BuildTable(
-          dbname_, env_, *cfd->ioptions(), mutable_cf_options, env_options_,
-          cfd->table_cache(), iter.get(),
+          dbname_, env_, *cfd->ioptions(), mutable_cf_options,
+          optimized_env_options, cfd->table_cache(), iter.get(),
           std::unique_ptr<InternalIterator>(mem->NewRangeTombstoneIterator(ro)),
           &meta, cfd->internal_comparator(),
           cfd->int_tbl_prop_collector_factories(), cfd->GetID(), cfd->GetName(),

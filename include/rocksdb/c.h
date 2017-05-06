@@ -457,6 +457,8 @@ extern ROCKSDB_LIBRARY_API void rocksdb_writebatch_set_save_point(
     rocksdb_writebatch_t*);
 extern ROCKSDB_LIBRARY_API void rocksdb_writebatch_rollback_to_save_point(
     rocksdb_writebatch_t*, char** errptr);
+extern ROCKSDB_LIBRARY_API void rocksdb_writebatch_pop_save_point(
+    rocksdb_writebatch_t*, char** errptr);
 
 /* Write batch with index */
 
@@ -804,8 +806,9 @@ extern ROCKSDB_LIBRARY_API void rocksdb_options_set_allow_mmap_writes(
     rocksdb_options_t*, unsigned char);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_use_direct_reads(
     rocksdb_options_t*, unsigned char);
-extern ROCKSDB_LIBRARY_API void rocksdb_options_set_use_direct_writes(
-    rocksdb_options_t*, unsigned char);
+extern ROCKSDB_LIBRARY_API void
+rocksdb_options_set_use_direct_io_for_flush_and_compaction(rocksdb_options_t*,
+                                                           unsigned char);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_is_fd_close_on_exec(
     rocksdb_options_t*, unsigned char);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_skip_log_error_on_recovery(

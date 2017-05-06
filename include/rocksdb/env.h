@@ -44,6 +44,7 @@ class WritableFile;
 class RandomRWFile;
 class Directory;
 struct DBOptions;
+struct ImmutableDBOptions;
 class RateLimiter;
 class ThreadStatusUpdater;
 struct ThreadStatus;
@@ -161,6 +162,20 @@ class Env {
   virtual Status NewWritableFile(const std::string& fname,
                                  unique_ptr<WritableFile>* result,
                                  const EnvOptions& options) = 0;
+
+  // Create an object that writes to a new file with the specified
+  // name.  Deletes any existing file with the same name and creates a
+  // new file.  On success, stores a pointer to the new file in
+  // *result and returns OK.  On failure stores nullptr in *result and
+  // returns non-OK.
+  //
+  // The returned file will only be accessed by one thread at a time.
+  virtual Status ReopenWritableFile(const std::string& fname,
+                                    unique_ptr<WritableFile>* result,
+                                    const EnvOptions& options) {
+    Status s;
+    return s;
+  }
 
   // Reuse an existing file by renaming it and opening it as writable.
   virtual Status ReuseWritableFile(const std::string& fname,
@@ -375,6 +390,20 @@ class Env {
   virtual EnvOptions OptimizeForManifestWrite(
       const EnvOptions& env_options) const;
 
+  // OptimizeForCompactionTableWrite will create a new EnvOptions object that is a copy
+  // of the EnvOptions in the parameters, but is optimized for writing table
+  // files. Default implementation returns the copy of the same object.
+  virtual EnvOptions OptimizeForCompactionTableWrite(
+      const EnvOptions& env_options,
+      const ImmutableDBOptions& db_options) const;
+
+  // OptimizeForCompactionTableWrite will create a new EnvOptions object that is a copy
+  // of the EnvOptions in the parameters, but is optimized for reading table
+  // files. Default implementation returns the copy of the same object.
+  virtual EnvOptions OptimizeForCompactionTableRead(
+      const EnvOptions& env_options,
+      const ImmutableDBOptions& db_options) const;
+
   // Returns the status of all threads that belong to the current Env.
   virtual Status GetThreadList(std::vector<ThreadStatus>* thread_list) {
     return Status::NotSupported("Not supported.");
@@ -439,6 +468,8 @@ class SequentialFile {
   // aligned buffer for Direct I/O
   virtual size_t GetRequiredBufferAlignment() const { return kDefaultPageSize; }
 
+  virtual void Rewind() {}
+
   // Remove any kind of caching of data from the offset to offset+length
   // of this file. If the length is 0, then it refers to the end of file.
   // If the system is not caching the file contents, then this is a noop.
@@ -457,6 +488,7 @@ class SequentialFile {
 // A file abstraction for randomly reading the contents of a file.
 class RandomAccessFile {
  public:
+
   RandomAccessFile() { }
   virtual ~RandomAccessFile();
 
@@ -473,15 +505,10 @@ class RandomAccessFile {
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const = 0;
 
-  // Used by the file_reader_writer to decide if the ReadAhead wrapper
-  // should simply forward the call and do not enact buffering or locking.
-  virtual bool ShouldForwardRawRequest() const {
-    return false;
+  // Readahead the file starting from offset by n bytes for caching.
+  virtual Status Prefetch(uint64_t offset, size_t n) {
+    return Status::OK();
   }
-
-  // For cases when read-ahead is implemented in the platform dependent
-  // layer
-  virtual void EnableReadAhead() {}
 
   // Tries to get an unique ID for this file that will be the same each time
   // the file is opened (and will stay the same while the file is open).
@@ -676,14 +703,12 @@ class WritableFile {
     }
   }
 
- protected:
-  /*
-   * Pre-allocate space for a file.
-   */
+  // Pre-allocates space for a file.
   virtual Status Allocate(uint64_t offset, uint64_t len) {
     return Status::OK();
   }
 
+ protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
 
  private:
@@ -713,17 +738,6 @@ class RandomRWFile {
   // Use the returned alignment value to allocate
   // aligned buffer for Direct I/O
   virtual size_t GetRequiredBufferAlignment() const { return kDefaultPageSize; }
-
-  // Used by the file_reader_writer to decide if the ReadAhead wrapper
-  // should simply forward the call and do not enact read_ahead buffering or locking.
-  // The implementation below takes care of reading ahead
-  virtual bool ShouldForwardRawRequest() const {
-    return false;
-  }
-
-  // For cases when read-ahead is implemented in the platform dependent
-  // layer. This is when ShouldForwardRawRequest() returns true.
-  virtual void EnableReadAhead() {}
 
   // Write bytes in `data` at  offset `offset`, Returns Status::OK() on success.
   // Pass aligned buffer when use_direct_io() returns true.
@@ -896,6 +910,11 @@ class EnvWrapper : public Env {
   Status NewWritableFile(const std::string& f, unique_ptr<WritableFile>* r,
                          const EnvOptions& options) override {
     return target_->NewWritableFile(f, r, options);
+  }
+  Status ReopenWritableFile(const std::string& fname,
+                            unique_ptr<WritableFile>* result,
+                            const EnvOptions& options) override {
+    return target_->ReopenWritableFile(fname, result, options);
   }
   Status ReuseWritableFile(const std::string& fname,
                            const std::string& old_fname,

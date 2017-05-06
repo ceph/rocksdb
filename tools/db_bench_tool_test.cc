@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -211,7 +213,7 @@ const std::string options_file_content = R"OPTIONS_FILE(
   allow_mmap_reads=false
   allow_mmap_writes=false
   use_direct_reads=false
-  use_direct_writes=false
+  use_direct_io_for_flush_and_compaction=false
   stats_dump_period_sec=600
   allow_fallocate=true
   max_log_file_size=83886080

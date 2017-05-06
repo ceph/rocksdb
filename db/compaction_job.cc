@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -739,12 +741,23 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     input->SeekToFirst();
   }
 
+  // we allow only 1 compaction event listener. Used by blob storage
+  CompactionEventListener* comp_event_listener = nullptr;
+#ifndef ROCKSDB_LITE
+  for (auto& celitr : cfd->ioptions()->listeners) {
+    comp_event_listener = celitr->GetCompactionEventListener();
+    if (comp_event_listener != nullptr) {
+      break;
+    }
+  }
+#endif  // ROCKSDB_LITE
+
   Status status;
   sub_compact->c_iter.reset(new CompactionIterator(
       input.get(), cfd->user_comparator(), &merge, versions_->LastSequence(),
       &existing_snapshots_, earliest_write_conflict_snapshot_, env_, false,
       range_del_agg.get(), sub_compact->compaction, compaction_filter,
-      shutting_down_));
+      comp_event_listener, shutting_down_));
   auto c_iter = sub_compact->c_iter.get();
   c_iter->SeekToFirst();
   if (c_iter->Valid() &&
@@ -1072,6 +1085,11 @@ Status CompactionJob::FinishCompactionOutputFile(
   TableProperties tp;
   if (s.ok() && current_entries > 0) {
     // Verify that the table is usable
+    // We set for_compaction to false and don't OptimizeForCompactionTableRead
+    // here because this is a special case after we finish the table building
+    // No matter whether use_direct_io_for_flush_and_compaction is true,
+    // we will regrad this verification as user reads since the goal is
+    // to cache it here for further user reads
     InternalIterator* iter = cfd->table_cache()->NewIterator(
         ReadOptions(), env_options_, cfd->internal_comparator(), meta->fd,
         nullptr /* range_del_agg */, nullptr,
@@ -1198,7 +1216,11 @@ Status CompactionJob::OpenCompactionOutputFile(
 #endif  // !ROCKSDB_LITE
   // Make the output file
   unique_ptr<WritableFile> writable_file;
-  Status s = NewWritableFile(env_, fname, &writable_file, env_options_);
+  EnvOptions opt_env_opts =
+      env_->OptimizeForCompactionTableWrite(env_options_, db_options_);
+  TEST_SYNC_POINT_CALLBACK("CompactionJob::OpenCompactionOutputFile",
+                           &opt_env_opts.use_direct_writes);
+  Status s = NewWritableFile(env_, fname, &writable_file, opt_env_opts);
   if (!s.ok()) {
     ROCKS_LOG_ERROR(
         db_options_.info_log,
