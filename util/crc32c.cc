@@ -2,8 +2,6 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
-//  This source code is also licensed under the GPLv2 license found in the
-//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -15,9 +13,8 @@
 #include "util/crc32c.h"
 
 #include <stdint.h>
-#ifdef HAVE_SSE42
 #include <nmmintrin.h>
-#endif
+#include <nmmintrin.h>
 #include "util/coding.h"
 
 namespace rocksdb {
@@ -293,11 +290,11 @@ static inline uint32_t LE_LOAD32(const uint8_t *p) {
   return DecodeFixed32(reinterpret_cast<const char*>(p));
 }
 
-#if defined(HAVE_SSE42) && (defined(__LP64__) || defined(_WIN64))
+#if defined(_WIN64) || defined(__LP64__)
 static inline uint64_t LE_LOAD64(const uint8_t *p) {
   return DecodeFixed64(reinterpret_cast<const char*>(p));
 }
-#endif
+#endif 
 
 static inline void Slow_CRC32(uint64_t* l, uint8_t const **p) {
   uint32_t c = static_cast<uint32_t>(*l ^ LE_LOAD32(*p));
@@ -315,10 +312,9 @@ static inline void Slow_CRC32(uint64_t* l, uint8_t const **p) {
   table0_[c >> 24];
 }
 
+__attribute__((target("sse4.2")))
 static inline void Fast_CRC32(uint64_t* l, uint8_t const **p) {
-#ifndef HAVE_SSE42
-  Slow_CRC32(l, p);
-#elif defined(__LP64__) || defined(_WIN64)
+#ifdef __LP64__
   *l = _mm_crc32_u64(*l, LE_LOAD64(*p));
   *p += 8;
 #else
@@ -388,6 +384,9 @@ static bool isSSE42() {
 #endif
 }
 
+template __attribute__((target("sse4.2")))
+uint32_t ExtendImpl<Fast_CRC32>(uint32_t, const char*, size_t);
+
 typedef uint32_t (*Function)(uint32_t, const char*, size_t);
 
 static inline Function Choose_Extend() {
@@ -395,7 +394,9 @@ static inline Function Choose_Extend() {
 }
 
 bool IsFastCrc32Supported() {
-#if defined(__SSE4_2__) || defined(_WIN64)
+#ifdef __SSE4_2__
+  return isSSE42();
+#elif defined(_WIN64)
   return isSSE42();
 #else
   return false;
@@ -410,3 +411,4 @@ uint32_t Extend(uint32_t crc, const char* buf, size_t size) {
 
 }  // namespace crc32c
 }  // namespace rocksdb
+
