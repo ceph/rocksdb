@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -352,6 +354,13 @@ inline Slice GetSliceUntil(Slice* slice, char delimiter) {
 }
 
 template<class T>
+#ifdef ROCKSDB_UBSAN_RUN
+#if defined(__clang__)
+__attribute__((__no_sanitize__("alignment")))
+#elif defined(__GNUC__)
+__attribute__((__no_sanitize_undefined__))
+#endif
+#endif
 inline void PutUnaligned(T *memory, const T &value) {
 #if defined(PLATFORM_UNALIGNED_ACCESS_NOT_ALLOWED)
   char *nonAlignedMemory = reinterpret_cast<char*>(memory);
@@ -362,6 +371,13 @@ inline void PutUnaligned(T *memory, const T &value) {
 }
 
 template<class T>
+#ifdef ROCKSDB_UBSAN_RUN
+#if defined(__clang__)
+__attribute__((__no_sanitize__("alignment")))
+#elif defined(__GNUC__)
+__attribute__((__no_sanitize_undefined__))
+#endif
+#endif
 inline void GetUnaligned(const T *memory, T *value) {
 #if defined(PLATFORM_UNALIGNED_ACCESS_NOT_ALLOWED)
   char *nonAlignedMemory = reinterpret_cast<char*>(value);

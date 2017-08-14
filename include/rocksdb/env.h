@@ -57,10 +57,10 @@ const size_t kDefaultPageSize = 4 * 1024;
 // Options while opening a file to read/write
 struct EnvOptions {
 
-  // construct with default Options
+  // Construct with default Options
   EnvOptions();
 
-  // construct from Options
+  // Construct from Options
   explicit EnvOptions(const DBOptions& options);
 
    // If true, then use mmap to read data
@@ -95,10 +95,10 @@ struct EnvOptions {
   // WAL writes
   bool fallocate_with_keep_size = true;
 
-  // See DBOPtions doc
+  // See DBOptions doc
   size_t compaction_readahead_size;
 
-  // See DBOPtions doc
+  // See DBOptions doc
   size_t random_access_max_buffer_size;
 
   // See DBOptions doc
@@ -183,7 +183,7 @@ class Env {
                                    unique_ptr<WritableFile>* result,
                                    const EnvOptions& options);
 
-  // Open `fname` for random read and write, if file dont exist the file
+  // Open `fname` for random read and write, if file doesn't exist the file
   // will be created.  On success, stores a pointer to the new file in
   // *result and returns OK.  On failure returns non-OK.
   //
@@ -318,7 +318,7 @@ class Env {
   // Wait for all threads started by StartThread to terminate.
   virtual void WaitForJoin() {}
 
-  // Get thread pool queue length for specific thrad pool.
+  // Get thread pool queue length for specific thread pool.
   virtual unsigned int GetThreadPoolQueueLen(Priority pri = LOW) const {
     return 0;
   }
@@ -364,6 +364,7 @@ class Env {
   // for this environment. 'LOW' is the default pool.
   // default number: 1
   virtual void SetBackgroundThreads(int number, Priority pri = LOW) = 0;
+  virtual int GetBackgroundThreads(Priority pri = LOW) = 0;
 
   // Enlarge number of background worker threads of a specific thread pool
   // for this environment if it is smaller than specified. 'LOW' is the default
@@ -380,6 +381,16 @@ class Env {
   virtual std::string GenerateUniqueId();
 
   // OptimizeForLogWrite will create a new EnvOptions object that is a copy of
+  // the EnvOptions in the parameters, but is optimized for reading log files.
+  virtual EnvOptions OptimizeForLogRead(const EnvOptions& env_options) const;
+
+  // OptimizeForManifestRead will create a new EnvOptions object that is a copy
+  // of the EnvOptions in the parameters, but is optimized for reading manifest
+  // files.
+  virtual EnvOptions OptimizeForManifestRead(
+      const EnvOptions& env_options) const;
+
+  // OptimizeForLogWrite will create a new EnvOptions object that is a copy of
   // the EnvOptions in the parameters, but is optimized for writing log files.
   // Default implementation returns the copy of the same object.
   virtual EnvOptions OptimizeForLogWrite(const EnvOptions& env_options,
@@ -390,16 +401,16 @@ class Env {
   virtual EnvOptions OptimizeForManifestWrite(
       const EnvOptions& env_options) const;
 
-  // OptimizeForCompactionTableWrite will create a new EnvOptions object that is a copy
-  // of the EnvOptions in the parameters, but is optimized for writing table
-  // files. Default implementation returns the copy of the same object.
+  // OptimizeForCompactionTableWrite will create a new EnvOptions object that is
+  // a copy of the EnvOptions in the parameters, but is optimized for writing
+  // table files.
   virtual EnvOptions OptimizeForCompactionTableWrite(
       const EnvOptions& env_options,
       const ImmutableDBOptions& db_options) const;
 
-  // OptimizeForCompactionTableWrite will create a new EnvOptions object that is a copy
-  // of the EnvOptions in the parameters, but is optimized for reading table
-  // files. Default implementation returns the copy of the same object.
+  // OptimizeForCompactionTableWrite will create a new EnvOptions object that
+  // is a copy of the EnvOptions in the parameters, but is optimized for reading
+  // table files.
   virtual EnvOptions OptimizeForCompactionTableRead(
       const EnvOptions& env_options,
       const ImmutableDBOptions& db_options) const;
@@ -468,8 +479,6 @@ class SequentialFile {
   // aligned buffer for Direct I/O
   virtual size_t GetRequiredBufferAlignment() const { return kDefaultPageSize; }
 
-  virtual void Rewind() {}
-
   // Remove any kind of caching of data from the offset to offset+length
   // of this file. If the length is 0, then it refers to the end of file.
   // If the system is not caching the file contents, then this is a noop.
@@ -510,16 +519,6 @@ class RandomAccessFile {
     return Status::OK();
   }
 
-  // Used by the file_reader_writer to decide if the ReadAhead wrapper
-  // should simply forward the call and do not enact buffering or locking.
-  virtual bool ShouldForwardRawRequest() const {
-    return false;
-  }
-
-  // For cases when read-ahead is implemented in the platform dependent
-  // layer
-  virtual void EnableReadAhead() {}
-
   // Tries to get an unique ID for this file that will be the same each time
   // the file is opened (and will stay the same while the file is open).
   // Furthermore, it tries to make this ID at most "max_size" bytes. If such an
@@ -528,7 +527,7 @@ class RandomAccessFile {
   // may not have been modified.
   //
   // This function guarantees, for IDs from a given environment, two unique ids
-  // cannot be made equal to eachother by adding arbitrary bytes to one of
+  // cannot be made equal to each other by adding arbitrary bytes to one of
   // them. That is, no unique ID is the prefix of another.
   //
   // This function guarantees that the returned ID will not be interpretable as
@@ -699,7 +698,7 @@ class WritableFile {
       return;
     }
     // If this write would cross one or more preallocation blocks,
-    // determine what the last preallocation block necesessary to
+    // determine what the last preallocation block necessary to
     // cover this write would be and Allocate to that point.
     const auto block_size = preallocation_block_size_;
     size_t new_last_preallocated_block =
@@ -713,14 +712,12 @@ class WritableFile {
     }
   }
 
- protected:
-  /*
-   * Pre-allocate space for a file.
-   */
+  // Pre-allocates space for a file.
   virtual Status Allocate(uint64_t offset, uint64_t len) {
     return Status::OK();
   }
 
+ protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
 
  private:
@@ -750,17 +747,6 @@ class RandomRWFile {
   // Use the returned alignment value to allocate
   // aligned buffer for Direct I/O
   virtual size_t GetRequiredBufferAlignment() const { return kDefaultPageSize; }
-
-  // Used by the file_reader_writer to decide if the ReadAhead wrapper
-  // should simply forward the call and do not enact read_ahead buffering or locking.
-  // The implementation below takes care of reading ahead
-  virtual bool ShouldForwardRawRequest() const {
-    return false;
-  }
-
-  // For cases when read-ahead is implemented in the platform dependent
-  // layer. This is when ShouldForwardRawRequest() returns true.
-  virtual void EnableReadAhead() {}
 
   // Write bytes in `data` at  offset `offset`, Returns Status::OK() on success.
   // Pass aligned buffer when use_direct_io() returns true.
@@ -1041,6 +1027,9 @@ class EnvWrapper : public Env {
   }
   void SetBackgroundThreads(int num, Priority pri) override {
     return target_->SetBackgroundThreads(num, pri);
+  }
+  int GetBackgroundThreads(Priority pri) override {
+    return target_->GetBackgroundThreads(pri);
   }
 
   void IncBackgroundThreadsIfNeeded(int num, Priority pri) override {

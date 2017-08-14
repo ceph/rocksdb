@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -13,11 +15,12 @@
 
 namespace rocksdb {
 
-// This function may intentionally do a left shift on a -ve number
-#if __clang_major__ > 3 || (__clang_major__ == 3 && __clang_minor__ >= 9)
-__attribute__((__no_sanitize__("undefined")))
-#elif __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 9)
+#ifdef ROCKSDB_UBSAN_RUN
+#if defined(__clang__)
+__attribute__((__no_sanitize__("shift")))
+#elif defined(__GNUC__)
 __attribute__((__no_sanitize_undefined__))
+#endif
 #endif
 uint32_t Hash(const char* data, size_t n, uint32_t seed) {
   // Similar to murmur hash

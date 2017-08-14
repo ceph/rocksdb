@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 #include "db/memtable_list.h"
 
@@ -161,6 +163,18 @@ Status MemTableListVersion::AddRangeTombstoneIterators(
     Status s = range_del_agg->AddTombstones(std::move(range_del_iter));
     if (!s.ok()) {
       return s;
+    }
+  }
+  return Status::OK();
+}
+
+Status MemTableListVersion::AddRangeTombstoneIterators(
+    const ReadOptions& read_opts,
+    std::vector<InternalIterator*>* range_del_iters) {
+  for (auto& m : memlist_) {
+    auto* range_del_iter = m->NewRangeTombstoneIterator(read_opts);
+    if (range_del_iter != nullptr) {
+      range_del_iters->push_back(range_del_iter);
     }
   }
   return Status::OK();

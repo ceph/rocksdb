@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 
 #include <string>
 #include <vector>
@@ -352,11 +354,11 @@ TEST_F(DBIteratorTest, DBIteratorPrevNext) {
     SetPerfLevel(kEnableCount);
     ASSERT_TRUE(GetPerfLevel() == kEnableCount);
 
-    perf_context.Reset();
+    get_perf_context()->Reset();
     db_iter->SeekToLast();
 
     ASSERT_TRUE(db_iter->Valid());
-    ASSERT_EQ(static_cast<int>(perf_context.internal_key_skipped_count), 7);
+    ASSERT_EQ(static_cast<int>(get_perf_context()->internal_key_skipped_count), 7);
     ASSERT_EQ(db_iter->key().ToString(), "b");
 
     SetPerfLevel(kDisable);
@@ -471,11 +473,11 @@ TEST_F(DBIteratorTest, DBIteratorPrevNext) {
     SetPerfLevel(kEnableCount);
     ASSERT_TRUE(GetPerfLevel() == kEnableCount);
 
-    perf_context.Reset();
+    get_perf_context()->Reset();
     db_iter->SeekToLast();
 
     ASSERT_TRUE(db_iter->Valid());
-    ASSERT_EQ(static_cast<int>(perf_context.internal_delete_skipped_count), 1);
+    ASSERT_EQ(static_cast<int>(get_perf_context()->internal_delete_skipped_count), 1);
     ASSERT_EQ(db_iter->key().ToString(), "b");
 
     SetPerfLevel(kDisable);

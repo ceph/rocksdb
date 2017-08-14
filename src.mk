@@ -35,6 +35,7 @@ LIB_SOURCES =                                                   \
   db/internal_stats.cc                                          \
   db/log_reader.cc                                              \
   db/log_writer.cc                                              \
+  db/malloc_stats.cc                                            \
   db/managed_iterator.cc                                        \
   db/memtable.cc                                                \
   db/memtable_list.cc                                           \
@@ -59,13 +60,14 @@ LIB_SOURCES =                                                   \
   env/env_hdfs.cc                                               \
   env/env_posix.cc                                              \
   env/io_posix.cc                                               \
-  env/memenv.cc                                                 \
+  env/mock_env.cc                                               \
+  memtable/alloc_tracker.cc                                     \
   memtable/hash_cuckoo_rep.cc                                   \
   memtable/hash_linklist_rep.cc                                 \
   memtable/hash_skiplist_rep.cc                                 \
-  memtable/memtable_allocator.cc                                \
   memtable/skiplistrep.cc                                       \
   memtable/vectorrep.cc                                         \
+  memtable/write_buffer_manager.cc                              \
   monitoring/histogram.cc                                       \
   monitoring/histogram_windowing.cc                             \
   monitoring/instrumented_mutex.cc                              \
@@ -150,10 +152,17 @@ LIB_SOURCES =                                                   \
   util/xxhash.cc                                                \
   utilities/backupable/backupable_db.cc                         \
   utilities/blob_db/blob_db.cc                                  \
+  utilities/blob_db/blob_db_impl.cc                             \
+  utilities/blob_db/blob_db_options_impl.cc                     \
+  utilities/blob_db/blob_file.cc                                \
+  utilities/blob_db/blob_log_reader.cc                          \
+  utilities/blob_db/blob_log_writer.cc                          \
+  utilities/blob_db/blob_log_format.cc                          \
   utilities/checkpoint/checkpoint_impl.cc                       \
   utilities/compaction_filters/remove_emptyvalue_compactionfilter.cc    \
   utilities/convenience/info_log_finder.cc                      \
   utilities/date_tiered/date_tiered_db_impl.cc                  \
+  utilities/debug.cc                                        	\
   utilities/document/document_db.cc                             \
   utilities/document/json_document.cc                           \
   utilities/document/json_document_builder.cc                   \
@@ -195,9 +204,9 @@ TOOL_LIB_SOURCES = \
   tools/ldb_cmd.cc                                               \
   tools/ldb_tool.cc                                              \
   tools/sst_dump_tool.cc                                         \
+  utilities/blob_db/blob_dump_tool.cc                            \
 
 MOCK_LIB_SOURCES = \
-  env/mock_env.cc \
   table/mock_table.cc \
   util/fault_injection_test_env.cc
 
@@ -247,6 +256,7 @@ MAIN_SOURCES =                                                    \
   db/db_test.cc                                                         \
   db/db_universal_compaction_test.cc                                    \
   db/db_wal_test.cc                                                     \
+  db/db_write_test.cc                                                   \
   db/dbformat_test.cc                                                   \
   db/deletefile_test.cc                                                 \
   db/external_sst_file_basic_test.cc                                    \
@@ -277,6 +287,7 @@ MAIN_SOURCES =                                                    \
   memtable/inlineskiplist_test.cc                                       \
   memtable/memtablerep_bench.cc                                         \
   memtable/skiplist_test.cc                                             \
+  memtable/write_buffer_manager_test.cc                                 \
   monitoring/histogram_test.cc                                          \
   monitoring/iostats_context_test.cc                                    \
   monitoring/statistics_test.cc                                         \
@@ -308,6 +319,7 @@ MAIN_SOURCES =                                                    \
   util/log_write_bench.cc                                               \
   util/rate_limiter_test.cc                                             \
   util/slice_transform_test.cc                                          \
+  util/timer_queue_test.cc                                             \
   util/thread_list_test.cc                                              \
   util/thread_local_test.cc                                             \
   utilities/backupable/backupable_db_test.cc                            \
@@ -348,7 +360,7 @@ JNI_NATIVE_SOURCES =                                          \
   java/rocksjni/compression_options.cc                        \
   java/rocksjni/env.cc                                        \
   java/rocksjni/env_options.cc                                \
-  java/rocksjni/external_sst_file_info.cc                     \
+  java/rocksjni/ingest_external_file_options.cc               \
   java/rocksjni/filter.cc                                     \
   java/rocksjni/iterator.cc                                   \
   java/rocksjni/loggerjnicallback.cc                          \

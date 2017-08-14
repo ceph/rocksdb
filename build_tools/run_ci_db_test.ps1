@@ -276,7 +276,7 @@ if($RunAll) {
       continue
     }
 
-    if($RunOnly.Contains($e)) {
+    if($RunOnly.Contains($bare_name)) {
       MakeAndAdd -token $e -HashTable $TestExes
     } else {
       $ListOfSuites += $bare_name
@@ -333,7 +333,7 @@ function RunJobs($Suites, $TestCmds, [int]$ConcurrencyVal)
             $Cases = @{}
 
             if($Suites.Count -gt 0) {
-              # Will teh first one
+              # Will the first one
               ForEach($e in $Suites.Keys) {
                 $exe_name = $e
                 $Cases = $Suites[$e]

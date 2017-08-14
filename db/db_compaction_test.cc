@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -519,7 +521,6 @@ TEST_F(DBCompactionTest, BGCompactionsAllowed) {
   options.level0_file_num_compaction_trigger = 2;
   options.level0_slowdown_writes_trigger = 20;
   options.soft_pending_compaction_bytes_limit = 1 << 30;  // Infinitely large
-  options.base_background_compactions = 1;
   options.max_background_compactions = 3;
   options.memtable_factory.reset(new SpecialSkipListFactory(kNumKeysPerFile));
 
@@ -776,6 +777,41 @@ TEST_F(DBCompactionTest, ZeroSeqIdCompaction) {
 
   dbfull()->TEST_WaitForCompact();
   ASSERT_OK(Put("", ""));
+}
+
+TEST_F(DBCompactionTest, ManualCompactionUnknownOutputSize) {
+  // github issue #2249
+  Options options = CurrentOptions();
+  options.compaction_style = kCompactionStyleLevel;
+  options.level0_file_num_compaction_trigger = 3;
+  DestroyAndReopen(options);
+
+  // create two files in l1 that we can compact
+  for (int i = 0; i < 2; ++i) {
+    for (int j = 0; j < options.level0_file_num_compaction_trigger; j++) {
+      // make l0 files' ranges overlap to avoid trivial move
+      Put(std::to_string(2 * i), std::string(1, 'A'));
+      Put(std::to_string(2 * i + 1), std::string(1, 'A'));
+      Flush();
+      dbfull()->TEST_WaitForFlushMemTable();
+    }
+    dbfull()->TEST_WaitForCompact();
+    ASSERT_EQ(NumTableFilesAtLevel(0, 0), 0);
+    ASSERT_EQ(NumTableFilesAtLevel(1, 0), i + 1);
+  }
+
+  ColumnFamilyMetaData cf_meta;
+  dbfull()->GetColumnFamilyMetaData(dbfull()->DefaultColumnFamily(), &cf_meta);
+  ASSERT_EQ(2, cf_meta.levels[1].files.size());
+  std::vector<std::string> input_filenames;
+  for (const auto& sst_file : cf_meta.levels[1].files) {
+    input_filenames.push_back(sst_file.name);
+  }
+
+  // note CompactionOptions::output_file_size_limit is unset.
+  CompactionOptions compact_opt;
+  compact_opt.compression = kNoCompression;
+  dbfull()->CompactFiles(compact_opt, input_filenames, 1);
 }
 
 // Check that writes done during a memtable compaction are recovered
@@ -1193,6 +1229,9 @@ TEST_F(DBCompactionTest, DISABLED_ManualPartialFill) {
   options.max_background_compactions = 3;
 
   DestroyAndReopen(options);
+  // make sure all background compaction jobs can be scheduled
+  auto stop_token =
+      dbfull()->TEST_write_controler().GetCompactionPressureToken();
   int32_t value_size = 10 * 1024;  // 10 KB
 
   // Add 2 non-overlapping files
@@ -1850,6 +1889,47 @@ TEST_F(DBCompactionTest, L0_CompactionBug_Issue44_b) {
   } while (ChangeCompactOptions());
 }
 
+TEST_F(DBCompactionTest, ManualAutoRace) {
+  CreateAndReopenWithCF({"pikachu"}, CurrentOptions());
+  rocksdb::SyncPoint::GetInstance()->LoadDependency(
+      {{"DBImpl::BGWorkCompaction", "DBCompactionTest::ManualAutoRace:1"},
+       {"DBImpl::RunManualCompaction:WaitScheduled",
+        "BackgroundCallCompaction:0"}});
+
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+
+  Put(1, "foo", "");
+  Put(1, "bar", "");
+  Flush(1);
+  Put(1, "foo", "");
+  Put(1, "bar", "");
+  // Generate four files in CF 0, which should trigger an auto compaction
+  Put("foo", "");
+  Put("bar", "");
+  Flush();
+  Put("foo", "");
+  Put("bar", "");
+  Flush();
+  Put("foo", "");
+  Put("bar", "");
+  Flush();
+  Put("foo", "");
+  Put("bar", "");
+  Flush();
+
+  // The auto compaction is scheduled but waited until here
+  TEST_SYNC_POINT("DBCompactionTest::ManualAutoRace:1");
+  // The auto compaction will wait until the the manual compaction is registerd
+  // before processing so that it will be cancelled.
+  dbfull()->CompactRange(CompactRangeOptions(), handles_[1], nullptr, nullptr);
+  ASSERT_EQ("0,1", FilesPerLevel(1));
+
+  // Eventually the cancelled compaction will be rescheduled and executed.
+  dbfull()->TEST_WaitForCompact();
+  ASSERT_EQ("0,1", FilesPerLevel(0));
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+}
+
 TEST_P(DBCompactionTestWithParam, ManualCompaction) {
   Options options = CurrentOptions();
   options.max_subcompactions = max_subcompactions_;
@@ -1899,7 +1979,6 @@ TEST_P(DBCompactionTestWithParam, ManualCompaction) {
 
     if (iter == 0) {
       options = CurrentOptions();
-      options.max_background_flushes = 0;
       options.num_levels = 3;
       options.create_if_missing = true;
       options.statistics = rocksdb::CreateDBStatistics();
@@ -2345,15 +2424,12 @@ TEST_F(DBCompactionTest, SanitizeCompactionOptionsTest) {
   options.hard_pending_compaction_bytes_limit = 100;
   options.create_if_missing = true;
   DestroyAndReopen(options);
-  ASSERT_EQ(5, db_->GetOptions().base_background_compactions);
   ASSERT_EQ(100, db_->GetOptions().soft_pending_compaction_bytes_limit);
 
-  options.base_background_compactions = 4;
   options.max_background_compactions = 3;
   options.soft_pending_compaction_bytes_limit = 200;
   options.hard_pending_compaction_bytes_limit = 150;
   DestroyAndReopen(options);
-  ASSERT_EQ(3, db_->GetOptions().base_background_compactions);
   ASSERT_EQ(150, db_->GetOptions().soft_pending_compaction_bytes_limit);
 }
 
@@ -2567,6 +2643,7 @@ TEST_P(DBCompactionDirectIOTest, DirectIO) {
   options.use_direct_io_for_flush_and_compaction = GetParam();
   options.env = new MockEnv(Env::Default());
   Reopen(options);
+  bool readahead = false;
   SyncPoint::GetInstance()->SetCallBack(
       "TableCache::NewIterator:for_compaction", [&](void* arg) {
         bool* use_direct_reads = static_cast<bool*>(arg);
@@ -2579,11 +2656,18 @@ TEST_P(DBCompactionDirectIOTest, DirectIO) {
         ASSERT_EQ(*use_direct_writes,
                   options.use_direct_io_for_flush_and_compaction);
       });
+  if (options.use_direct_io_for_flush_and_compaction) {
+    SyncPoint::GetInstance()->SetCallBack(
+        "SanitizeOptions:direct_io", [&](void* arg) {
+          readahead = true;
+        });
+  }
   SyncPoint::GetInstance()->EnableProcessing();
   CreateAndReopenWithCF({"pikachu"}, options);
   MakeTables(3, "p", "q", 1);
   ASSERT_EQ("1,1,1", FilesPerLevel(1));
   Compact(1, "p1", "p9");
+  ASSERT_FALSE(readahead ^ options.use_direct_io_for_flush_and_compaction);
   ASSERT_EQ("0,0,1", FilesPerLevel(1));
   Destroy(options);
   delete options.env;

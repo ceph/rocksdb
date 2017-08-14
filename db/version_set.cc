@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -134,8 +136,8 @@ class FilePicker {
 
         // Do key range filtering of files or/and fractional cascading if:
         // (1) not all the files are in level 0, or
-        // (2) there are more than 3 Level 0 files
-        // If there are only 3 or less level 0 files in the system, we skip
+        // (2) there are more than 3 current level files
+        // If there are only 3 or less current level files in the system, we skip
         // the key range filtering. In this case, more likely, the system is
         // highly tuned to minimize number of tables queried by each query,
         // so it is unlikely that key range filtering is more efficient than
@@ -526,6 +528,13 @@ class LevelFileIteratorState : public TwoLevelIteratorState {
     return true;
   }
 
+  bool KeyReachedUpperBound(const Slice& internal_key) override {
+    return read_options_.iterate_upper_bound != nullptr &&
+           icomparator_.user_comparator()->Compare(
+               ExtractUserKey(internal_key),
+               *read_options_.iterate_upper_bound) >= 0;
+  }
+
  private:
   TableCache* table_cache_;
   const ReadOptions read_options_;
@@ -856,6 +865,22 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
   }
 }
 
+void Version::AddRangeDelIteratorsForLevel(
+    const ReadOptions& read_options, const EnvOptions& soptions, int level,
+    std::vector<InternalIterator*>* range_del_iters) {
+  range_del_iters->clear();
+  for (size_t i = 0; i < storage_info_.LevelFilesBrief(level).num_files; i++) {
+    const auto& file = storage_info_.LevelFilesBrief(level).files[i];
+    auto* range_del_iter = cfd_->table_cache()->NewRangeTombstoneIterator(
+        read_options, soptions, cfd_->internal_comparator(), file.fd,
+        cfd_->internal_stats()->GetFileReadHist(level),
+        false /* skip_filters */, level);
+    if (range_del_iter != nullptr) {
+      range_del_iters->push_back(range_del_iter);
+    }
+  }
+}
+
 VersionStorageInfo::VersionStorageInfo(
     const InternalKeyComparator* internal_comparator,
     const Comparator* user_comparator, int levels,
@@ -1007,7 +1032,8 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     std::string* str_value = value != nullptr ? value->GetSelf() : nullptr;
     *status = MergeHelper::TimedFullMerge(
         merge_operator_, user_key, nullptr, merge_context->GetOperands(),
-        str_value, info_log_, db_statistics_, env_);
+        str_value, info_log_, db_statistics_, env_,
+        nullptr /* result_operand */, true);
     if (LIKELY(value != nullptr)) {
       value->PinSelf();
     }
@@ -1119,8 +1145,11 @@ void Version::UpdateAccumulatedStats(bool update_stats) {
           storage_info_.UpdateAccumulatedStats(file_meta);
           // when option "max_open_files" is -1, all the file metadata has
           // already been read, so MaybeInitializeFileMetaData() won't incur
-          // any I/O cost.
-          if (vset_->db_options_->max_open_files == -1) {
+          // any I/O cost. "max_open_files=-1" means that the table cache passed
+          // to the VersionSet and then to the ColumnFamilySet has a size of
+          // TableCache::kInfiniteCapacity
+          if (vset_->GetColumnFamilySet()->get_table_cache()->GetCapacity() ==
+              TableCache::kInfiniteCapacity) {
             continue;
           }
           if (++init_count >= kMaxInitCount) {
@@ -1204,15 +1233,18 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
   // accumulated bytes.
 
   uint64_t bytes_compact_to_next_level = 0;
+  uint64_t level_size = 0;
+  for (auto* f : files_[0]) {
+    level_size += f->fd.GetFileSize();
+  }
   // Level 0
   bool level0_compact_triggered = false;
-  if (static_cast<int>(files_[0].size()) >
-      mutable_cf_options.level0_file_num_compaction_trigger) {
+  if (static_cast<int>(files_[0].size()) >=
+          mutable_cf_options.level0_file_num_compaction_trigger ||
+      level_size >= mutable_cf_options.max_bytes_for_level_base) {
     level0_compact_triggered = true;
-    for (auto* f : files_[0]) {
-      bytes_compact_to_next_level += f->fd.GetFileSize();
-    }
-    estimated_compaction_needed_bytes_ = bytes_compact_to_next_level;
+    estimated_compaction_needed_bytes_ = level_size;
+    bytes_compact_to_next_level = level_size;
   } else {
     estimated_compaction_needed_bytes_ = 0;
   }
@@ -1220,7 +1252,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
   // Level 1 and up.
   uint64_t bytes_next_level = 0;
   for (int level = base_level(); level <= MaxInputLevel(); level++) {
-    uint64_t level_size = 0;
+    level_size = 0;
     if (bytes_next_level > 0) {
 #ifndef NDEBUG
       uint64_t level_size2 = 0;
@@ -1307,6 +1339,13 @@ void VersionStorageInfo::ComputeCompactionScore(
         score =
             static_cast<double>(total_size) /
             immutable_cf_options.compaction_options_fifo.max_table_files_size;
+        if (immutable_cf_options.compaction_options_fifo.allow_compaction) {
+          score = std::max(
+              static_cast<double>(num_sorted_runs) /
+                  mutable_cf_options.level0_file_num_compaction_trigger,
+              score);
+        }
+
       } else {
         score = static_cast<double>(num_sorted_runs) /
                 mutable_cf_options.level0_file_num_compaction_trigger;
@@ -2108,7 +2147,11 @@ void VersionStorageInfo::CalculateBaseBytes(const ImmutableCFOptions& ioptions,
           level_size = MultiplyCheckOverflow(
               level_size, options.max_bytes_for_level_multiplier);
         }
-        level_max_bytes_[i] = level_size;
+        // Don't set any level below base_bytes_max. Otherwise, the LSM can
+        // assume an hourglass shape where L1+ sizes are smaller than L0. This
+        // causes compaction scoring, which depends on level sizes, to favor L1+
+        // at the expense of L0, which may fill up and stall.
+        level_max_bytes_[i] = std::max(level_size, base_bytes_max);
       }
     }
   }
@@ -2378,7 +2421,8 @@ Status VersionSet::LogAndApply(ColumnFamilyData* column_family_data,
 
     TEST_SYNC_POINT("VersionSet::LogAndApply:WriteManifest");
     if (!w.edit_list.front()->IsColumnFamilyManipulation() &&
-        db_options_->max_open_files == -1) {
+        this->GetColumnFamilySet()->get_table_cache()->GetCapacity() ==
+            TableCache::kInfiniteCapacity) {
       // unlimited table cache. Pre-load table handle now.
       // Need to do it out of the mutex.
       builder_guard->version_builder()->LoadTableHandlers(
@@ -2613,7 +2657,7 @@ Status VersionSet::Recover(
   {
     unique_ptr<SequentialFile> manifest_file;
     s = env_->NewSequentialFile(manifest_filename, &manifest_file,
-                                env_options_);
+                                env_->OptimizeForManifestRead(env_options_));
     if (!s.ok()) {
       return s;
     }
@@ -2824,7 +2868,8 @@ Status VersionSet::Recover(
       assert(builders_iter != builders.end());
       auto* builder = builders_iter->second->version_builder();
 
-      if (db_options_->max_open_files == -1) {
+      if (GetColumnFamilySet()->get_table_cache()->GetCapacity() ==
+          TableCache::kInfiniteCapacity) {
         // unlimited table cache. Pre-load table handle now.
         // Need to do it out of the mutex.
         builder->LoadTableHandlers(
@@ -3039,7 +3084,8 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
   Status s;
   {
     unique_ptr<SequentialFile> file;
-    s = options.env->NewSequentialFile(dscname, &file, env_options_);
+    s = options.env->NewSequentialFile(
+        dscname, &file, env_->OptimizeForManifestRead(env_options_));
     if (!s.ok()) {
       return s;
     }
@@ -3449,9 +3495,11 @@ InternalIterator* VersionSet::MakeInputIterator(
   ReadOptions read_options;
   read_options.verify_checksums = true;
   read_options.fill_cache = false;
-  if (c->ShouldFormSubcompactions()) {
-    read_options.total_order_seek = true;
-  }
+  // Compaction iterators shouldn't be confined to a single prefix.
+  // Compactions use Seek() for
+  // (a) concurrent compactions,
+  // (b) CompactionFilter::Decision::kRemoveAndSkipUntil.
+  read_options.total_order_seek = true;
 
   // Level-0 files have to be merged together.  For other levels,
   // we will make a concatenating iterator per level.

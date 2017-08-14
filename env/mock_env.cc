@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -779,5 +781,15 @@ std::string MockEnv::NormalizePath(const std::string path) {
 void MockEnv::FakeSleepForMicroseconds(int64_t micros) {
   fake_sleep_micros_.fetch_add(micros);
 }
+
+#ifndef ROCKSDB_LITE
+// This is to maintain the behavior before swithcing from InMemoryEnv to MockEnv
+Env* NewMemEnv(Env* base_env) { return new MockEnv(base_env); }
+
+#else  // ROCKSDB_LITE
+
+Env* NewMemEnv(Env* base_env) { return nullptr; }
+
+#endif  // !ROCKSDB_LITE
 
 }  // namespace rocksdb

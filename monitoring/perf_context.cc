@@ -2,27 +2,38 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 
 #include <sstream>
 #include "monitoring/perf_context_imp.h"
+#include "util/thread_local.h"
 
 namespace rocksdb {
 
-#if defined(NPERF_CONTEXT) || defined(IOS_CROSS_COMPILE)
-  PerfContext perf_context;
-#elif defined(_MSC_VER)
-  __declspec(thread) PerfContext perf_context;
+#ifdef NPERF_CONTEXT
+PerfContext perf_context;
 #else
-  #if defined(OS_SOLARIS)
-    __thread PerfContext perf_context_;
-  #else
-    __thread PerfContext perf_context;
-  #endif
+ThreadLocalPtr perf_context([](void* ptr) {
+    auto* p = static_cast<PerfContext*>(ptr);
+    delete p;
+  });
 #endif
 
+PerfContext* get_perf_context() {
+#ifdef NPERF_CONTEXT
+  return &perf_context;
+#else
+  if (perf_context.Get() == nullptr) {
+    perf_context.Reset(static_cast<void*>(new PerfContext()));
+  }
+  return static_cast<PerfContext*>(perf_context.Get());
+#endif
+}
+
 void PerfContext::Reset() {
-#if !defined(NPERF_CONTEXT) && !defined(IOS_CROSS_COMPILE)
+#ifndef NPERF_CONTEXT
   user_key_comparison_count = 0;
   block_cache_hit_count = 0;
   block_read_count = 0;
@@ -96,7 +107,7 @@ void PerfContext::Reset() {
   }
 
 std::string PerfContext::ToString(bool exclude_zero_counters) const {
-#if defined(NPERF_CONTEXT) || defined(IOS_CROSS_COMPILE)
+#ifdef NPERF_CONTEXT
   return "";
 #else
   std::ostringstream ss;
@@ -165,11 +176,5 @@ std::string PerfContext::ToString(bool exclude_zero_counters) const {
   return ss.str();
 #endif
 }
-
-#if defined(OS_SOLARIS)
-PerfContext *getPerfContext() {
-  return &perf_context_;
-}
-#endif
 
 }

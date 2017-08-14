@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -560,7 +562,7 @@ void DBIter::MergeValuesNewToOld() {
       const Slice val = iter_->value();
       s = MergeHelper::TimedFullMerge(
           merge_operator_, ikey.user_key, &val, merge_context_.GetOperands(),
-          &saved_value_, logger_, statistics_, env_, &pinned_value_);
+          &saved_value_, logger_, statistics_, env_, &pinned_value_, true);
       if (!s.ok()) {
         status_ = s;
       }
@@ -585,7 +587,7 @@ void DBIter::MergeValuesNewToOld() {
   s = MergeHelper::TimedFullMerge(merge_operator_, saved_key_.GetUserKey(),
                                   nullptr, merge_context_.GetOperands(),
                                   &saved_value_, logger_, statistics_, env_,
-                                  &pinned_value_);
+                                  &pinned_value_, true);
   if (!s.ok()) {
     status_ = s;
   }
@@ -804,13 +806,13 @@ bool DBIter::FindValueForCurrentKey() {
         s = MergeHelper::TimedFullMerge(
             merge_operator_, saved_key_.GetUserKey(), nullptr,
             merge_context_.GetOperands(), &saved_value_, logger_, statistics_,
-            env_, &pinned_value_);
+            env_, &pinned_value_, true);
       } else {
         assert(last_not_merge_type == kTypeValue);
         s = MergeHelper::TimedFullMerge(
             merge_operator_, saved_key_.GetUserKey(), &pinned_value_,
             merge_context_.GetOperands(), &saved_value_, logger_, statistics_,
-            env_, &pinned_value_);
+            env_, &pinned_value_, true);
       }
       break;
     case kTypeValue:
@@ -882,7 +884,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
     s = MergeHelper::TimedFullMerge(merge_operator_, saved_key_.GetUserKey(),
                                     nullptr, merge_context_.GetOperands(),
                                     &saved_value_, logger_, statistics_, env_,
-                                    &pinned_value_);
+                                    &pinned_value_, true);
     // Make iter_ valid and point to saved_key_
     if (!iter_->Valid() ||
         !user_comparator_->Equal(ikey.user_key, saved_key_.GetUserKey())) {
@@ -900,7 +902,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
   s = MergeHelper::TimedFullMerge(merge_operator_, saved_key_.GetUserKey(),
                                   &val, merge_context_.GetOperands(),
                                   &saved_value_, logger_, statistics_, env_,
-                                  &pinned_value_);
+                                  &pinned_value_, true);
   valid_ = true;
   if (!s.ok()) {
     status_ = s;

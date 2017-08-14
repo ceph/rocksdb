@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 #pragma once
 
@@ -82,6 +84,9 @@ class MemTableListVersion {
 
   Status AddRangeTombstoneIterators(const ReadOptions& read_opts, Arena* arena,
                                     RangeDelAggregator* range_del_agg);
+  Status AddRangeTombstoneIterators(
+      const ReadOptions& read_opts,
+      std::vector<InternalIterator*>* range_del_iters);
 
   void AddIterators(const ReadOptions& options,
                     std::vector<InternalIterator*>* iterator_list,
