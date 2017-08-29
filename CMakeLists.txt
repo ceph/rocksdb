@@ -565,6 +565,11 @@ set(SOURCES
         utilities/write_batch_with_index/write_batch_with_index_internal.cc
         $<TARGET_OBJECTS:build_version>)
 
+if(NOT FORCE_SSE42 AND NOT MSVC AND HAVE_SSE4)
+  set_source_files_properties(util/crc32c.cc
+    PROPERTIES COMPILE_FLAGS -msse4.2)
+endif()
+
 if(WIN32)
   list(APPEND SOURCES
     port/win/io_win.cc
