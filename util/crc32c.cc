@@ -1,7 +1,7 @@
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
-//  This source code is licensed under both the GPLv2 (found in the
-//  COPYING file in the root directory) and Apache 2.0 License
-//  (found in the LICENSE.Apache file in the root directory).
+//  This source code is licensed under the BSD-style license found in the
+//  LICENSE file in the root directory of this source tree. An additional grant
+//  of patent rights can be found in the PATENTS file in the same directory.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -10,12 +10,11 @@
 // A portable implementation of crc32c, optimized to handle
 // four bytes at a time.
 
+#include <map>
 #include "util/crc32c.h"
 
 #include <stdint.h>
-#ifdef HAVE_SSE42
 #include <nmmintrin.h>
-#endif
 #include "util/coding.h"
 
 namespace rocksdb {
@@ -286,12 +285,141 @@ static const uint32_t table3_[256] = {
   0x4a21617b, 0x9764cbc3, 0xf54642fa, 0x2803e842
 };
 
+/*
+[Streaming SIMD Extensions 3 (SSE3)]
+The launch of 90 nm process-based IntelÂ® PentiumÂ® 4 Processor introduces the 
+Streaming SIMD Extensions 3 (SSE3), which includes 13 more SIMD instructions 
+than SSE2. The 13 new instructions are primarily designed to improve thread 
+synchronization and specific application areas such as media and gaming.
+
+[Streaming SIMD Extensions 4 (SSE4)]
+SSE4 consists of 54 instructions. A subset consisting of 47 instructions, 
+referred to as SSE4.1 in Intel documentation, is available in Penryn.
+SSE4.2, a second subset consisting of the 7 remaining instructions, is first 
+available in the Nehalem-based IntelÂ® Coreâ¢ i7 Processor.
+
+SSE4.2 consists of 7 instructions that improve performance of text processing 
+and some application-specific operations:
+  - 4 String and text processing instructions
+  - 1 instruction used for comparison of packed integer quadwords
+  - 2 application-targeted accelerator (ATA) instructions:
+    - CRC32 - calculates cyclic redundancy check of a block of data
+    - POPCNT - improves searching of bit patterns
+
+
+Instruction set                         Header file
+------------------------------------------------------------------------------
+MMX                                     mmintrin.h          [Pentium MMX!]
+SSE                                     xmmintrin.h         [SSE + MMX (Pentium 3, Athlon XP)]
+SSE2                                    emmintrin.h         [SSE2 + SSE + MMX (Pentium 4, Athlon 64)]
+SSE3                                    pmmintrin.h         [SSE3 + SSE2 + SSE + MMX (Pentium 4 Prescott, Athlon 64 San Diego)]
+Suppl. SSE3                             tmmintrin.h         [SSSE3 + SSE3 + SSE2 + SSE + MMX (Core 2, Bulldozer)]
+SSE4.1                                  smmintrin.h         [SSE4_1 + SSSE3 + SSE3 + SSE2 + SSE + MMX (Core i7, Bulldozer)]
+SSE4.2                                  nmmintrin.h (MS)    [SSE4_2 + SSE4_1 + SSSE3 + SSE3 + SSE2 + SSE + MMX (Core i7, Bulldozer)]
+                                        smmintrin.h (Gnu)   [SSE4_1 + SSSE3 + SSE3 + SSE2 + SSE + MMX (Core i7, Bulldozer)]
+AES, PCLMUL                             wmmintrin.h         [AES (Core i7 Westmere, Bulldozer)]
+AVX                                     immintrin.h         [AVX, SSE4_2 + SSE4_1 + SSSE3 + SSE3 + SSE2 + SSE + MMX (Core i7 Sandy Bridge, Bulldozer)]
+POPCNT                                  popcntintrin.h      [POPCNT (Nehalem (Core i7), Phenom)]
+AMD SSE4A                               ammintrin.h         [SSE4A + SSE3 + SSE2 + SSE + MMX (Phenom)]
+AMD XOP                                 ammintrin.h (MS)    [SSE4A + SSE3 + SSE2 + SSE + MMX (Phenom)]
+                                        xopintrin.h (Gnu)   []
+AMD FMA4                                fma4intrin.h (Gnu)  []
+
+all                                     intrin.h (MS)
+                                        x86intrin.h (Gnu)   [x86 instructions]
+*/
+
+enum class CpuSSEFeature {
+/*
+  CMOV,       //("cmov")
+  MMX,        //("mmx")
+  POPCNT,     //("popcnt")
+  FMA4,       //("fma4")
+  XOP,        //("xop")
+  FMA,        //("fma")
+  AVX512F,    //("avx512f")
+  BMI,        //("bmi")
+  BMI2,       //("bmi2")
+*/
+  SSE,      //("sse")
+  SSE2,     //("sse2")
+  SSE3,     //("sse3")
+  SSSE3,    //("ssse3")
+  SSE4_A,   //("sse4a")
+  SSE4_1,   //("sse4.1")
+  SSE4_2,   //("sse4.2")
+  AVX,      //("avx")
+  AVX2,     //("avx2")
+  SSE_NONE,
+};
+
+#if !defined(__has_builtin)
+  #define __has_builtin(x) false
+#endif
+
+// We want to know if a cpu feature is available at runtime. 
+static inline bool is_cpu_feature_available(const CpuSSEFeature& cpu_feature) {
+#if (defined(__GNUC__) || (__clang__))
+#if (__GNUC_PREREQ(4,8) || __has_builtin(__builtin_cpu_supports))
+  static const auto STR_FEATURE_SSE("sse");
+  static const auto STR_FEATURE_SSE2("sse2");
+  static const auto STR_FEATURE_SSE3("sse3");
+  static const auto STR_FEATURE_SSE4_A("sse4a");
+  static const auto STR_FEATURE_SSE4_1("sse4.1");
+  static const auto STR_FEATURE_SSE4_2("sse4.2");
+  static const auto STR_FEATURE_AVX("avx");
+  static const auto STR_FEATURE_AVX2("avx2");
+
+  using cpu_feature_list = std::map<CpuSSEFeature, std::string>;
+  const static cpu_feature_list supported_feature_list = {
+    {CpuSSEFeature::SSE, STR_FEATURE_SSE},        {CpuSSEFeature::SSE2, STR_FEATURE_SSE2},
+    {CpuSSEFeature::SSE3, STR_FEATURE_SSE3},      {CpuSSEFeature::SSE4_A, STR_FEATURE_SSE4_A},
+    {CpuSSEFeature::SSE4_1, STR_FEATURE_SSE4_1},  {CpuSSEFeature::SSE4_2, STR_FEATURE_SSE4_2},
+    {CpuSSEFeature::AVX, STR_FEATURE_AVX},        {CpuSSEFeature::AVX2, STR_FEATURE_AVX2},
+  };
+
+  auto itr = supported_feature_list.find(cpu_feature);
+  if (itr != supported_feature_list.end()) {
+    CpuSSEFeature feature = cpu_feature;
+    __builtin_cpu_init();
+
+    //returns a positive integer if the run-time CPU supports feature and 
+    //returns 0 otherwise.
+    switch (feature) {
+      case CpuSSEFeature::SSE:
+        return __builtin_cpu_supports(STR_FEATURE_SSE);
+      case CpuSSEFeature::SSE2:
+        return __builtin_cpu_supports(STR_FEATURE_SSE2);
+      case CpuSSEFeature::SSE3:
+        return __builtin_cpu_supports(STR_FEATURE_SSE3);
+      case CpuSSEFeature::SSE4_A:
+        return __builtin_cpu_supports(STR_FEATURE_SSE4_A);
+      case CpuSSEFeature::SSE4_1:
+        return __builtin_cpu_supports(STR_FEATURE_SSE4_1);
+      case CpuSSEFeature::SSE4_2:
+        return __builtin_cpu_supports(STR_FEATURE_SSE4_2);
+      case CpuSSEFeature::AVX:
+        return __builtin_cpu_supports(STR_FEATURE_AVX);
+      case CpuSSEFeature::AVX2:
+        return __builtin_cpu_supports(STR_FEATURE_AVX2);
+      default:
+        return false;
+    }
+  }
+#endif
+
+#else
+  #error "The implementation of this function for your compiler is not available yet!"
+#endif
+  return false;
+}
+
 // Used to fetch a naturally-aligned 32-bit word in little endian byte-order
 static inline uint32_t LE_LOAD32(const uint8_t *p) {
   return DecodeFixed32(reinterpret_cast<const char*>(p));
 }
 
-#if defined(HAVE_SSE42) && (defined(__LP64__) || defined(_WIN64))
+#if defined(_WIN64) || defined(__LP64__)
 static inline uint64_t LE_LOAD64(const uint8_t *p) {
   return DecodeFixed64(reinterpret_cast<const char*>(p));
 }
@@ -313,10 +441,11 @@ static inline void Slow_CRC32(uint64_t* l, uint8_t const **p) {
   table0_[c >> 24];
 }
 
+// Here we are checking for *this feature only (sse4.2) at compile time.
+// However, we also want a way to check for cpu features dynamically/runtime. 
+__attribute__((target("sse4.2")))
 static inline void Fast_CRC32(uint64_t* l, uint8_t const **p) {
-#ifndef HAVE_SSE42
-  Slow_CRC32(l, p);
-#elif defined(__LP64__) || defined(_WIN64)
+#ifdef __LP64__
   *l = _mm_crc32_u64(*l, LE_LOAD64(*p));
   *p += 8;
 #else
@@ -388,6 +517,9 @@ static bool isSSE42() {
 #endif
 }
 
+template __attribute__((target("sse4.2")))
+uint32_t ExtendImpl<Fast_CRC32>(uint32_t, const char*, size_t);
+
 typedef uint32_t (*Function)(uint32_t, const char*, size_t);
 
 static inline Function Choose_Extend() {
@@ -395,7 +527,13 @@ static inline Function Choose_Extend() {
 }
 
 bool IsFastCrc32Supported() {
+#ifdef __SSE4_2__
   return isSSE42();
+#elif defined(_WIN64)
+  return isSSE42();
+#else
+  return false;
+#endif
 }
 
 Function ChosenExtend = Choose_Extend();
@@ -404,5 +542,12 @@ uint32_t Extend(uint32_t crc, const char* buf, size_t size) {
   return ChosenExtend(crc, buf, size);
 }
 
+// We want to check if this cpu feature is available at runtime, 
+// *not at compile time*. 
+static inline bool isRuntimeSSE42Available() {
+  return (is_cpu_feature_available(CpuSSEFeature::SSE4_2));
+}
+
 }  // namespace crc32c
 }  // namespace rocksdb
+
