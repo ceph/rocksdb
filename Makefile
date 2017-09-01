@@ -305,7 +305,7 @@ ifdef FORCE_GIT_SHA
 else
 	git_sha := $(shell git rev-parse HEAD 2>/dev/null)
 endif
-gen_build_version = sed -e s/@@GIT_SHA@@/$(git_sha)/ -e s/@@GIT_DATE_TIME@@/$(date)/ util/build_version.cc.in
+gen_build_version = sed -e s/@@GIT_SHA@@/$(git_sha)/ -e s/@@GIT_DATE_TIME@@/$(date -u -d@$${SOURCE_DATE_EPOCH:-$$(date +%s)})/ util/build_version.cc.in
 
 # Record the version of the source that we are compiling.
 # We keep a record of the git revision in this file.  It is then built
