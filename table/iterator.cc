@@ -17,6 +17,8 @@ namespace rocksdb {
 Cleanable::Cleanable() {
   cleanup_.function = nullptr;
   cleanup_.next = nullptr;
+  cleanup_.arg2 = nullptr;
+  cleanup_.arg2 = nullptr;
 }
 
 Cleanable::~Cleanable() { DoCleanup(); }
