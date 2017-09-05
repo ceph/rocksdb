@@ -89,9 +89,9 @@ class CompactedDBImpl : public DBImpl {
   inline size_t FindFile(const Slice& key);
   Status Init(const Options& options);
 
-  ColumnFamilyData* cfd_;
-  Version* version_;
-  const Comparator* user_comparator_;
+  ColumnFamilyData* cfd_ = nullptr;
+  Version* version_ = nullptr;
+  const Comparator* user_comparator_ = nullptr;
   LevelFilesBrief files_;
 
   // No copying allowed
