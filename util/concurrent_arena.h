@@ -88,7 +88,7 @@ class ConcurrentArena : public Allocator {
   struct Shard {
     char padding[40] ROCKSDB_FIELD_UNUSED;
     mutable SpinMutex mutex;
-    char* free_begin_;
+    char* free_begin_ = nullptr;
     std::atomic<size_t> allocated_and_unused_;
 
     Shard() : allocated_and_unused_(0) {}
