@@ -148,7 +148,7 @@ Status WritePreparedTxnDB::Initialize(
   SequenceNumber last_seq = db_impl_->GetLatestSequenceNumber();
   AdvanceMaxEvictedSeq(prev_max, last_seq);
 
-  db_impl_->SetSnapshotChecker(new SnapshotChecker(this));
+  db_impl_->SetSnapshotChecker(new WritePreparedSnapshotChecker(this));
 
   auto s = PessimisticTransactionDB::Initialize(compaction_enabled_cf_indices,
                                                 handles);
@@ -737,6 +737,7 @@ bool WritePreparedTxnDB::IsInSnapshot(uint64_t prep_seq,
 
 void WritePreparedTxnDB::AddPrepared(uint64_t seq) {
   ROCKS_LOG_DEBUG(info_log_, "Txn %" PRIu64 " Prepareing", seq);
+  // TODO(myabandeh): Add a runtime check to ensure the following assert.
   assert(seq > max_evicted_seq_);
   WriteLock wl(&prepared_mutex_);
   prepared_txns_.push(seq);
