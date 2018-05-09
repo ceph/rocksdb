@@ -287,7 +287,7 @@ struct InlineSkipList<Comparator>::Node {
   // next_[0].  This is used for passing data from AllocateKey to Insert.
   void StashHeight(const int height) {
     assert(sizeof(int) <= sizeof(next_[0]));
-    memcpy(&next_[0], &height, sizeof(int));
+    memcpy(static_cast<void*>(&next_[0]), &height, sizeof(int));
   }
 
   // Retrieves the value passed to StashHeight.  Undefined after a call
