@@ -202,7 +202,7 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
 
   size_t header_size;
   char buf[kRecyclableHeaderSize];
-
+  size_t padding_size = 0;
   // Format the header
   buf[4] = static_cast<char>(n & 0xff);
   buf[5] = static_cast<char>(n >> 8);
@@ -235,13 +235,37 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
                            &crc);
   EncodeFixed32(buf, crc);
 
+  if (need_pad(t)) {
+    // Calculate total record size including header and payload
+    size_t total_size = header_size + n;
+    
+    // Calculate padding needed for 4K alignment
+    size_t aligned_size = AlignTo4K(total_size);
+    padding_size = aligned_size - total_size;
+    assert(padding_size >= 0);
+  } else if (is_aligned_type(t)) { // 偏移和长度都是4k对齐的
+    assert(Is4KAligned(block_offset_));
+    assert(Is4KAligned(header_size + n));
+  } 
+
   // Write the header and the payload
   IOStatus s = dest_->Append(Slice(buf, header_size), 0 /* crc32c_checksum */,
                              rate_limiter_priority);
   if (s.ok()) {
     s = dest_->Append(Slice(ptr, n), payload_crc, rate_limiter_priority);
   }
-  block_offset_ += header_size + n;
+
+  // Add padding if needed for 4K alignment
+  if (s.ok() && padding_size > 0) {
+    char buf[padding_size];
+    memset(buf, 0, padding_size);
+    s = dest_->Append(Slice(buf, padding_size), 0 /* crc32c_checksum */,
+                      rate_limiter_priority);
+  }
+
+  // Update block offset with aligned size
+  block_offset_ += header_size + n + padding_size;
+  assert(Is4KAligned(block_offset_));
   return s;
 }
 
