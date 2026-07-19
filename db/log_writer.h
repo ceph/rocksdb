@@ -83,6 +83,19 @@ class Writer {
 
   ~Writer();
 
+  // 4K alignment size
+  static constexpr size_t kAlignSize = 4096;
+
+  // Helper function to align size to 4K boundary
+  static size_t AlignTo4K(size_t size) {
+    return (size + kAlignSize - 1) & ~(kAlignSize - 1);
+  }
+
+  bool Is4KAligned(size_t size) {
+      // 如果size与(4096-1)按位与的结果为0，则说明size是4K对齐的
+      return (size & (kAlignSize - 1)) == 0;
+  }
+
   IOStatus AddRecord(const Slice& slice,
                      Env::IOPriority rate_limiter_priority = Env::IO_TOTAL);
   IOStatus AddCompressionTypeRecord();
@@ -97,6 +110,14 @@ class Writer {
   IOStatus Close();
 
   bool BufferIsEmpty();
+
+  bool need_pad(RecordType type) {
+    return type == kFullType || type == kLastType;
+  }
+
+  bool is_aligned_type(RecordType type) {
+    return type == kFirstType || type == kMiddleType;
+  }
 
  private:
   std::unique_ptr<WritableFileWriter> dest_;
